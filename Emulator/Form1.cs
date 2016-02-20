@@ -54,4 +54,11 @@ namespace Emulator
             _cpu.Stop();
         }
     }
+
+    class Student
+    {
+        int age;
+        string name;
+        float avarage;
+    }
 }

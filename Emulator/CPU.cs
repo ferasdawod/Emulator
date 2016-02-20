@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -83,6 +84,7 @@ namespace Emulator
 
         private byte[] _romMemory = new byte[128];
         private byte[] _ramMemory = new byte[128];
+        private byte _callRegister = 0;
 
         public CPU()
         {
@@ -137,15 +139,16 @@ namespace Emulator
         {
             while (_running)
             {
-                byte opCodeBytes = 1;
-                var opCode = _romMemory[PC];
+                var instruction = _romMemory[PC];
+                PC++;
+                var opCode = (instruction & 0xF0) >> 4;
 
                 switch (opCode)
                 {
                     case 0x00:  // MOV Rn, Rn
                         {
-                            var destenation = opCode & 0xC;
-                            var source = opCode & 0x03;
+                            var destenation = instruction & 0xC;
+                            var source = instruction & 0x03;
                             var sourceVal = GetRegisterValue(source);
                             WriteToRegister(destenation, sourceVal);
                         }
@@ -153,18 +156,18 @@ namespace Emulator
 
                     case 0x01:  // MOV Rn, XXXX
                         {
-                            var destenation = opCode & 0xC;
-                            var source = opCode & 0x3;
+                            var destenation = instruction & 0xC;
+                            var source = instruction & 0x3;
                             byte val = 0;
                             if (source == 0)
                             {
-                                opCodeBytes = 2;
-                                val = _romMemory[PC + 1];
+                                val = _romMemory[PC];
+                                PC++;
                             }
                             else if (source == 1)
                             {
-                                opCodeBytes = 2;
-                                var address = _romMemory[PC + 1];
+                                var address = _romMemory[PC];
+                                PC++;
                                 val = _ramMemory[address & 0x7F];
                             }
                             else if (source == 2)
@@ -180,16 +183,16 @@ namespace Emulator
                         }
                         break;
 
-                    case 0x02:
+                    case 0x02:  // MOV XXXX, Rn
                         {
-                            var source = opCode & 0x3;
+                            var source = instruction & 0x3;
                             var sourceVal = GetRegisterValue(source);
 
                             var destenation = 0xC;
                             if (destenation == 0)
                             {
-                                opCodeBytes = 2;
-                                var memAddress = _romMemory[PC + 1];
+                                var memAddress = _romMemory[PC];
+                                PC++;
                                 _ramMemory[memAddress & 0x7F] = sourceVal;
                             }
                             else if (destenation == 1)
@@ -199,27 +202,28 @@ namespace Emulator
                         }
                         break;
 
-                    case 0x03:
+                    case 0x03:  // MOV ACC, XXXX
                         {
-                            opCodeBytes = 2;
-                            if ((opCode & 0x1) == 0)
+                            if ((instruction & 0x1) == 0)
                             {
-                                var immVal = _romMemory[PC + 1];
+                                var immVal = _romMemory[PC];
+                                PC++;
                                 ACC = immVal;
                             }
                             else
                             {
-                                var address = _romMemory[PC + 2];
+                                var address = _romMemory[PC];
+                                PC++;
                                 var memVal = _ramMemory[address & 0x7F];
                                 ACC = memVal;
                             }
                         }
                         break;
 
-                    case 0x04:
+                    case 0x04:  // INC/DEC Rn
                         {
-                            var source = opCode & 0x3;
-                            if ((opCode & 0x4) == 0)
+                            var source = instruction & 0x3;
+                            if ((instruction & 0x4) == 0)
                             {
                                 byte val = GetRegisterValue(source);
                                 val++;
@@ -233,9 +237,100 @@ namespace Emulator
                             }
                         }
                         break;
-                }
 
-                PC += opCodeBytes;
+                    case 0x05:  // JXX [MEM]
+                        {
+                            var flag = instruction & 0x3;
+                            var flagValue = GetFlagValue(flag);
+
+                            var withFlag = (instruction & 0x4) != 0;
+                            var directJmp = (instruction & 0x8) != 0;
+
+                            var shouldJump = !(flagValue ^ withFlag) ^ directJmp;
+
+                            if (shouldJump)
+                            {
+                                var jmpAddress = _romMemory[PC];
+                                PC = jmpAddress;
+                            }
+                        }
+                        break;
+
+                    case 0x06:  // INC/DEC ACC
+                        {
+                            var inc = (instruction & 0x1) != 0;
+                            if (inc)
+                                ACC++;
+                            else
+                                ACC--;
+                        }
+                        break;
+
+                    case 0x07:  // CLEAR ACC
+                        {
+                            ACC = 0;
+                        }
+                        break;
+
+                    case 0x08:  // LOGIC OP ACC, Rn
+                        {
+
+                        }
+                        break;
+
+                    case 0x09:  // ARITH OP ACC, Rn
+                        {
+                        }
+                        break;
+
+                    case 0x0A:  // LOGIC OP ACC, XXXX
+                        {
+                        }
+                        break;
+
+                    case 0x0B:  // ARITH OP ACC, XXXX
+                        {
+                        }
+                        break;
+
+                    case 0x0C:  // CALL/RET
+                        {
+                            var isCall = (instruction & 0x1) != 0;
+                            if (isCall)
+                            {
+                                var memAddress = _romMemory[PC];
+                                _callRegister = PC;
+                                PC = memAddress;
+                            }
+                        }
+                        break;
+
+                    case 0x0D:  // XCHNG ACC, Rn
+                        {
+                            var register = instruction & 0x3;
+                            var registerValue = GetRegisterValue(register);
+                            WriteToRegister(register, ACC);
+                            ACC = registerValue;
+                        }
+                        break;
+
+                    case 0x0E:  // SET/CLEAR FLAG
+                        {
+                        }
+                        break;
+
+                    case 0x0F:  // RESET
+                        {
+                            Reset();
+                        }
+                        break;
+
+                    default:
+                        {
+                            Debug.WriteLine("UnImplemented Instruction " + Convert.ToString(opCode, 16));
+                        }
+                        break;
+                }
             }
         }
 
@@ -253,6 +348,23 @@ namespace Emulator
                     return DX;
                 default:
                     return 0;
+            }
+        }
+
+        private bool GetFlagValue(int flagIndex)
+        {
+            switch (flagIndex)
+            {
+                case 0:
+                    return CF;
+                case 1:
+                    return SF;
+                case 2:
+                    return ZF;
+                case 3:
+                    return PF;
+                default:
+                    return false;
             }
         }
 
