@@ -95,6 +95,11 @@ namespace Emulator
         {
             CF = SF = ZF = PF = false;
             AX = BX = CX = DX = ACC = PC = 0x0;
+
+            for (int i = 0; i < _ramMemory.Length; i++)
+            {
+                _ramMemory[i] = 0;
+            }
         }
 
         public void LoadRomMemory(byte[] romMemory)
